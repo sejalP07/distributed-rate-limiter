@@ -5,21 +5,15 @@ from starlette.responses import JSONResponse
 
 from app.redis import redis_client
 from app.redis_token_bucket import RedisTokenBucket
+from app.config import rate_limit_settings
 
-
-# Simple policy for Step 4
-RATE_LIMIT_CAPACITY = 5
-RATE_LIMIT_REFILL_RATE = 1.0
-
-
-# One shared rate limiter instance for this gateway process.
-# The actual bucket state is stored in Redis.
 rate_limiter = RedisTokenBucket(
     redis_client,
-    capacity=RATE_LIMIT_CAPACITY,
-    refill_rate=RATE_LIMIT_REFILL_RATE,
+    capacity=rate_limit_settings.capacity,
+    refill_rate=rate_limit_settings.refill_rate,
     key_prefix="rate_limit:ip",
 )
+
 
 
 async def rate_limit_middleware(request: Request, call_next):
@@ -61,9 +55,11 @@ async def rate_limit_middleware(request: Request, call_next):
     remaining = max(0, int(decision.remaining_tokens))
 
     headers = {
-        "X-RateLimit-Limit": str(int(RATE_LIMIT_CAPACITY)),
-        "X-RateLimit-Remaining": str(remaining),
-    }
+    "X-RateLimit-Limit": str(
+        int(rate_limit_settings.capacity)
+    ),
+    "X-RateLimit-Remaining": str(remaining),
+}
 
     # No token available.
     if not decision.allowed:
