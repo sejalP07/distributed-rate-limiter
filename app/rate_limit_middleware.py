@@ -6,6 +6,8 @@ from starlette.responses import JSONResponse
 from app.redis import redis_client
 from app.redis_token_bucket import RedisTokenBucket
 from app.config import rate_limit_settings
+from app.identity import get_client_identity
+
 
 rate_limiter = RedisTokenBucket(
     redis_client,
@@ -30,14 +32,10 @@ async def rate_limit_middleware(request: Request, call_next):
     # Do not rate-limit health or internal endpoints yet.
     if not request.url.path.startswith("/api/"):
         return await call_next(request)
+    
+    identity_type, identity_value = get_client_identity(request)
 
-    # Identify client IP.
-    if request.client is not None:
-        client_ip = request.client.host
-    else:
-        client_ip = "unknown"
-
-    identifier = f"ip:{client_ip}"
+    identifier = f"{identity_type}:{identity_value}"
 
     try:
         decision = await rate_limiter.try_consume(identifier)
