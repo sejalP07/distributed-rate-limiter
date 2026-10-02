@@ -2,14 +2,16 @@ from fastapi import Request
 
 
 def get_client_identity(request: Request) -> tuple[str, str]:
-    """
-    Determine how this request should be rate-limited.
+    # For an already-authenticated API key, use the database
+    # client ID instead of the secret API key itself.
+    authenticated_client_id = getattr(
+        request.state,
+        "authenticated_client_id",
+        None,
+    )
 
-    Priority:
-    1. API key
-    2. User ID
-    3. IP address
-    """
+    if authenticated_client_id is not None:
+        return "api_key", str(authenticated_client_id)
 
     api_key = request.headers.get("X-API-Key")
 

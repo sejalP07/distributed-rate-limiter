@@ -8,7 +8,8 @@ from app.identity import get_client_identity
 from app.policies import RateLimitPolicy, get_policy
 from app.redis import redis_client
 from app.redis_token_bucket import RedisTokenBucket
-
+from app.auth import authenticate_api_key
+from app.database import AsyncSessionLocal
 
 class RateLimiterManager:
     """
@@ -51,10 +52,35 @@ async def rate_limit_middleware(
     if not request.url.path.startswith("/api/"):
         return await call_next(request)
 
+    
+    api_key = request.headers.get("X-API-Key")
+
+    if api_key:
+        try:
+            async with AsyncSessionLocal() as session:
+                client = await authenticate_api_key(
+                    session,
+                    api_key,
+                )
+        except Exception:
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "detail": "Authentication service unavailable",
+                },
+            )
+
+        if client is None:
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "detail": "Invalid or inactive API key",
+                },
+            )
+
+        request.state.authenticated_client_id = client.id
     # Determine client identity.
-    identity_type, identity_value = get_client_identity(
-        request
-    )
+    identity_type, identity_value = get_client_identity(request)
 
     # Select policy for this identity type.
     policy = get_policy(
@@ -66,9 +92,7 @@ async def rate_limit_middleware(
     limiter = rate_limiter_manager.get_limiter(policy)
 
     # Identifier uniquely identifies this client.
-    identifier = (
-        f"{identity_type}:{identity_value}"
-    )
+    identifier = identity_value
 
     try:
         decision = await limiter.try_consume(
