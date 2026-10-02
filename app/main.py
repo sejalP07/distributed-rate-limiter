@@ -68,3 +68,15 @@ async def demo_api():
     return {
         "message": "Request passed the rate limiter"
     }
+@app.get("/api/search")
+async def search_api():
+    return {
+        "message": "Search request passed the rate limiter"
+    }
+
+
+@app.get("/api/upload")
+async def upload_api():
+    return {
+        "message": "Upload request passed the rate limiter"
+    }

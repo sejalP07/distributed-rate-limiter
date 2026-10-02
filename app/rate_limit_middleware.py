@@ -57,7 +57,10 @@ async def rate_limit_middleware(
     )
 
     # Select policy for this identity type.
-    policy = get_policy(identity_type)
+    policy = get_policy(
+        identity_type,
+        request.url.path,
+    )
 
     # Get the Redis-backed limiter for that policy.
     limiter = rate_limiter_manager.get_limiter(policy)
