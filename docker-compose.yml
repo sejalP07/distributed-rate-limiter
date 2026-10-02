@@ -38,7 +38,8 @@ services:
 
       UPLOAD_API_KEY_RATE_LIMIT_CAPACITY: 10
       UPLOAD_API_KEY_RATE_LIMIT_REFILL_RATE: 2
-
+    
+      ADMIN_API_KEY: ${ADMIN_API_KEY:-dev-admin-key-change-me}
     depends_on:
       redis:
         condition: service_healthy

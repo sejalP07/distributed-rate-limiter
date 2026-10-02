@@ -10,6 +10,16 @@ from app.database import (
 from app.proxy import proxy_request
 from app.rate_limit_middleware import rate_limit_middleware
 from app.redis import redis_client
+from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.admin_auth import require_admin
+from app.database import get_db
+from app.schemas import (
+    CreateClientRequest,
+    CreateClientResponse,
+)
+from app.services import ClientService
 
 
 @asynccontextmanager
@@ -129,4 +139,25 @@ async def gateway_proxy(
     return await proxy_request(
         request,
         path,
+    )
+@app.post(
+    "/admin/clients",
+    response_model=CreateClientResponse,
+    status_code=201,
+)
+async def create_client(
+    payload: CreateClientRequest,
+    _: None = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> CreateClientResponse:
+    service = ClientService(db)
+
+    created = await service.create_client(
+        payload.name,
+    )
+
+    return CreateClientResponse(
+        id=created.client.id,
+        name=created.client.name,
+        api_key=created.api_key,
     )
