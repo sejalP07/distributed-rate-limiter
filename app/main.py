@@ -1,22 +1,26 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 
+from app.proxy import proxy_request
 from app.rate_limit_middleware import rate_limit_middleware
 from app.redis import redis_client
 
 
 app = FastAPI(
     title="Distributed Rate Limiter & API Gateway",
-    version="0.3.0",
+    version="0.4.0",
 )
 
 
-app.middleware("http")(rate_limit_middleware)
+app.middleware("http")(
+    rate_limit_middleware
+)
 
 
 @app.get("/health")
 async def health_check():
     return {
-        "status": "healthy"
+        "status": "healthy",
+        "service": "gateway",
     }
 
 
@@ -48,7 +52,9 @@ async def redis_test():
             ex=60,
         )
 
-        value = await redis_client.get(test_key)
+        value = await redis_client.get(
+            test_key
+        )
 
         return {
             "status": "success",
@@ -63,20 +69,22 @@ async def redis_test():
         }
 
 
-@app.get("/api/demo")
-async def demo_api():
-    return {
-        "message": "Request passed the rate limiter"
-    }
-@app.get("/api/search")
-async def search_api():
-    return {
-        "message": "Search request passed the rate limiter"
-    }
-
-
-@app.get("/api/upload")
-async def upload_api():
-    return {
-        "message": "Upload request passed the rate limiter"
-    }
+@app.api_route(
+    "/api/{path:path}",
+    methods=[
+        "GET",
+        "POST",
+        "PUT",
+        "PATCH",
+        "DELETE",
+        "OPTIONS",
+    ],
+)
+async def gateway_proxy(
+    request: Request,
+    path: str,
+):
+    return await proxy_request(
+        request,
+        path,
+    )
