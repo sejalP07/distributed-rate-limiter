@@ -3,3 +3,7 @@ uvicorn[standard]
 redis
 pytest
 httpx
+httpx2
+SQLAlchemy[asyncio]
+asyncpg
+greenlet

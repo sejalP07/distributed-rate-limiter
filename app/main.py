@@ -1,13 +1,36 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 
+from app.database import (
+    check_database_connection,
+    close_database,
+    init_database,
+)
 from app.proxy import proxy_request
 from app.rate_limit_middleware import rate_limit_middleware
 from app.redis import redis_client
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Initialize resources when the gateway starts
+    and release them when it shuts down.
+    """
+
+    await init_database()
+
+    try:
+        yield
+    finally:
+        await close_database()
+
+
 app = FastAPI(
     title="Distributed Rate Limiter & API Gateway",
-    version="0.4.0",
+    version="0.5.0",
+    lifespan=lifespan,
 )
 
 
@@ -38,6 +61,25 @@ async def redis_health_check():
         return {
             "status": "unhealthy",
             "redis": str(exc),
+        }
+
+
+@app.get("/health/db")
+async def database_health_check():
+    try:
+        healthy = await check_database_connection()
+
+        return {
+            "status": "healthy",
+            "database": "postgresql",
+            "connected": healthy,
+        }
+
+    except Exception as exc:
+        return {
+            "status": "unhealthy",
+            "database": "postgresql",
+            "error": str(exc),
         }
 
 
