@@ -3,46 +3,76 @@ from math import ceil
 from fastapi import Request
 from starlette.responses import JSONResponse
 
-from app.redis import redis_client
-from app.redis_token_bucket import RedisTokenBucket
 from app.config import rate_limit_settings
 from app.identity import get_client_identity
+from app.policies import RateLimitPolicy, get_policy
+from app.redis import redis_client
+from app.redis_token_bucket import RedisTokenBucket
 
 
-rate_limiter = RedisTokenBucket(
-    redis_client,
-    capacity=rate_limit_settings.capacity,
-    refill_rate=rate_limit_settings.refill_rate,
-    key_prefix="rate_limit:ip",
-)
-
-
-
-async def rate_limit_middleware(request: Request, call_next):
+class RateLimiterManager:
     """
-    Runs before the requested FastAPI endpoint.
+    Creates and caches one RedisTokenBucket per policy.
 
-    For /api/*:
-    1. Identify the client by IP.
-    2. Ask Redis token bucket whether one token is available.
-    3. Reject with 429 if no token is available.
-    4. Otherwise continue to the endpoint.
+    Each policy has its own configuration and Redis key prefix.
     """
 
-    # Do not rate-limit health or internal endpoints yet.
+    def __init__(self):
+        self.redis = redis_client
+        self._limiters: dict[str, RedisTokenBucket] = {}
+
+    def get_limiter(
+        self,
+        policy: RateLimitPolicy,
+    ) -> RedisTokenBucket:
+        if policy.name not in self._limiters:
+            self._limiters[policy.name] = RedisTokenBucket(
+                self.redis,
+                capacity=policy.capacity,
+                refill_rate=policy.refill_rate,
+                key_prefix=f"rate_limit:{policy.name}",
+            )
+
+        return self._limiters[policy.name]
+
+
+rate_limiter_manager = RateLimiterManager()
+
+
+async def rate_limit_middleware(
+    request: Request,
+    call_next,
+):
+    """
+    Apply a rate-limit policy to /api/* requests.
+    """
+
+    # Health/internal endpoints are not rate limited.
     if not request.url.path.startswith("/api/"):
         return await call_next(request)
-    
-    identity_type, identity_value = get_client_identity(request)
 
-    identifier = f"{identity_type}:{identity_value}"
+    # Determine client identity.
+    identity_type, identity_value = get_client_identity(
+        request
+    )
+
+    # Select policy for this identity type.
+    policy = get_policy(identity_type)
+
+    # Get the Redis-backed limiter for that policy.
+    limiter = rate_limiter_manager.get_limiter(policy)
+
+    # Identifier uniquely identifies this client.
+    identifier = (
+        f"{identity_type}:{identity_value}"
+    )
 
     try:
-        decision = await rate_limiter.try_consume(identifier)
+        decision = await limiter.try_consume(
+            identifier
+        )
 
     except Exception:
-        # For now, fail closed so API traffic is not allowed
-        # to bypass the rate limiter when Redis is unavailable.
         return JSONResponse(
             status_code=503,
             content={
@@ -50,23 +80,31 @@ async def rate_limit_middleware(request: Request, call_next):
             },
         )
 
-    remaining = max(0, int(decision.remaining_tokens))
+    remaining = max(
+        0,
+        int(decision.remaining_tokens),
+    )
 
     headers = {
-    "X-RateLimit-Limit": str(
-        int(rate_limit_settings.capacity)
-    ),
-    "X-RateLimit-Remaining": str(remaining),
-}
+        "X-RateLimit-Limit": str(
+            int(policy.capacity)
+        ),
+        "X-RateLimit-Remaining": str(
+            remaining
+        ),
+    }
 
-    # No token available.
     if not decision.allowed:
         retry_after = max(
             1,
-            ceil(decision.retry_after_seconds),
+            ceil(
+                decision.retry_after_seconds
+            ),
         )
 
-        headers["Retry-After"] = str(retry_after)
+        headers["Retry-After"] = str(
+            retry_after
+        )
 
         return JSONResponse(
             status_code=429,
@@ -77,10 +115,8 @@ async def rate_limit_middleware(request: Request, call_next):
             headers=headers,
         )
 
-    # Token was consumed.
     response = await call_next(request)
 
-    # Add rate-limit information to successful responses too.
     response.headers.update(headers)
 
     return response

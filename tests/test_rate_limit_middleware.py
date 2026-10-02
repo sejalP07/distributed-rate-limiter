@@ -1,9 +1,10 @@
 from fastapi.testclient import TestClient
 
 import app.rate_limit_middleware as rate_limit_module
+from app.config import rate_limit_settings
 from app.main import app
 from app.redis_token_bucket import RateLimitDecision
-from app.config import rate_limit_settings
+
 
 class FakeRateLimiter:
     def __init__(self, capacity: int = 5):
@@ -31,15 +32,27 @@ class FakeRateLimiter:
         )
 
 
+class FakeRateLimiterManager:
+    def __init__(self, fake_limiter):
+        self.fake_limiter = fake_limiter
+
+    def get_limiter(self, policy):
+        return self.fake_limiter
+
+
 def test_api_request_is_allowed(
     monkeypatch,
 ):
     fake_limiter = FakeRateLimiter()
 
+    fake_manager = FakeRateLimiterManager(
+        fake_limiter
+    )
+
     monkeypatch.setattr(
         rate_limit_module,
-        "rate_limiter",
-        fake_limiter,
+        "rate_limiter_manager",
+        fake_manager,
     )
 
     with TestClient(app) as client:
@@ -49,7 +62,11 @@ def test_api_request_is_allowed(
 
     assert (
         response.headers["X-RateLimit-Limit"]
-        == str(int(rate_limit_settings.capacity))
+        == str(
+            int(
+                rate_limit_settings.capacity
+            )
+        )
     )
 
     assert (
@@ -63,10 +80,14 @@ def test_api_request_is_rejected_after_limit(
 ):
     fake_limiter = FakeRateLimiter()
 
+    fake_manager = FakeRateLimiterManager(
+        fake_limiter
+    )
+
     monkeypatch.setattr(
         rate_limit_module,
-        "rate_limiter",
-        fake_limiter,
+        "rate_limiter_manager",
+        fake_manager,
     )
 
     with TestClient(app) as client:
@@ -96,7 +117,11 @@ def test_api_request_is_rejected_after_limit(
 
     assert (
         rejected.headers["X-RateLimit-Limit"]
-        == str(int(rate_limit_settings.capacity))
+        == str(
+            int(
+                rate_limit_settings.capacity
+            )
+        )
     )
 
     assert (
@@ -115,10 +140,14 @@ def test_health_endpoint_is_not_rate_limited(
 ):
     fake_limiter = FakeRateLimiter()
 
+    fake_manager = FakeRateLimiterManager(
+        fake_limiter
+    )
+
     monkeypatch.setattr(
         rate_limit_module,
-        "rate_limiter",
-        fake_limiter,
+        "rate_limiter_manager",
+        fake_manager,
     )
 
     with TestClient(app) as client:
