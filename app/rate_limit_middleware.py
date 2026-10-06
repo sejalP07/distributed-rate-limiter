@@ -1,15 +1,14 @@
-from math import ceil
-
 from fastapi import Request
 from starlette.responses import JSONResponse
 
-from app.config import rate_limit_settings
+from app.auth import authenticate_api_key
+from app.database import AsyncSessionLocal
 from app.identity import get_client_identity
+from app.observability import log_rate_limit_rejection
 from app.policies import RateLimitPolicy, get_policy
 from app.redis import redis_client
 from app.redis_token_bucket import RedisTokenBucket
-from app.auth import authenticate_api_key
-from app.database import AsyncSessionLocal
+
 
 class RateLimiterManager:
     """
@@ -18,7 +17,7 @@ class RateLimiterManager:
     Each policy has its own configuration and Redis key prefix.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.redis = redis_client
         self._limiters: dict[str, RedisTokenBucket] = {}
 
@@ -48,11 +47,11 @@ async def rate_limit_middleware(
     Apply a rate-limit policy to /api/* requests.
     """
 
-    # Health/internal endpoints are not rate limited.
+    # Health and internal endpoints are not rate limited.
     if not request.url.path.startswith("/api/"):
         return await call_next(request)
 
-    
+    # Authenticate API-key clients before rate limiting.
     api_key = request.headers.get("X-API-Key")
 
     if api_key:
@@ -62,6 +61,7 @@ async def rate_limit_middleware(
                     session,
                     api_key,
                 )
+
         except Exception:
             return JSONResponse(
                 status_code=503,
@@ -78,20 +78,23 @@ async def rate_limit_middleware(
                 },
             )
 
+        # Store only the safe database client ID.
         request.state.authenticated_client_id = client.id
+
     # Determine client identity.
     identity_type, identity_value = get_client_identity(request)
 
-    # Select policy for this identity type.
+    # Select policy based on identity and endpoint.
     policy = get_policy(
         identity_type,
         request.url.path,
     )
 
-    # Get the Redis-backed limiter for that policy.
+    # Get the Redis-backed limiter for this policy.
     limiter = rate_limiter_manager.get_limiter(policy)
 
-    # Identifier uniquely identifies this client.
+    # The identifier should NOT include the identity type again.
+    # The policy name is already part of the Redis key prefix.
     identifier = identity_value
 
     try:
@@ -112,7 +115,8 @@ async def rate_limit_middleware(
         int(decision.remaining_tokens),
     )
 
-    headers = {
+    # Headers returned for allowed requests.
+    rate_limit_headers = {
         "X-RateLimit-Limit": str(
             int(policy.capacity)
         ),
@@ -121,29 +125,61 @@ async def rate_limit_middleware(
         ),
     }
 
+    # Reject request when rate limit is exceeded.
     if not decision.allowed:
-        retry_after = max(
-            1,
-            ceil(
-                decision.retry_after_seconds
-            ),
+        log_rate_limit_rejection(
+            identity_type=identity_type,
+            identity=identifier,
+            method=request.method,
+            endpoint=request.url.path,
+            policy_name=policy.name,
+            limit=policy.capacity,
+            remaining=decision.remaining_tokens,
+            retry_after_seconds=decision.retry_after_seconds,
         )
 
-        headers["Retry-After"] = str(
-            retry_after
-        )
-
-        return JSONResponse(
+        response = JSONResponse(
             status_code=429,
             content={
                 "detail": "Rate limit exceeded",
-                "retry_after_seconds": retry_after,
+                "retry_after_seconds": int(
+                    max(
+                        1,
+                        decision.retry_after_seconds,
+                    )
+                ),
             },
-            headers=headers,
         )
 
+        response.headers["X-RateLimit-Limit"] = str(
+            int(policy.capacity)
+        )
+
+        response.headers["X-RateLimit-Remaining"] = str(
+            int(
+                max(
+                    0,
+                    decision.remaining_tokens,
+                )
+            )
+        )
+
+        response.headers["Retry-After"] = str(
+            int(
+                max(
+                    1,
+                    decision.retry_after_seconds,
+                )
+            )
+        )
+
+        return response
+
+    # Allowed request: forward to backend.
     response = await call_next(request)
 
-    response.headers.update(headers)
+    # Add rate-limit headers to successful responses.
+    for key, value in rate_limit_headers.items():
+        response.headers[key] = value
 
     return response

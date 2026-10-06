@@ -20,8 +20,11 @@ from app.schemas import (
     CreateClientResponse,
 )
 from app.services import ClientService
-
-
+import logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
