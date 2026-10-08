@@ -1,3 +1,5 @@
+from urllib import response
+
 from fastapi import Request
 from starlette.responses import JSONResponse
 
@@ -9,6 +11,15 @@ from app.policies import RateLimitPolicy, get_policy
 from app.redis import redis_client
 from app.redis_token_bucket import RedisTokenBucket
 
+from time import perf_counter
+
+from app.metrics import (
+    AUTH_FAILURES,
+    DEPENDENCY_ERRORS,
+    GATEWAY_REQUESTS,
+    RATE_LIMIT_REJECTIONS,
+    REQUEST_LATENCY,
+)
 
 class RateLimiterManager:
     """
@@ -50,7 +61,19 @@ async def rate_limit_middleware(
     # Health and internal endpoints are not rate limited.
     if not request.url.path.startswith("/api/"):
         return await call_next(request)
+    start_time = perf_counter()
+    def record_request(
+        status_code: int,
+    ) -> None:
+        status_class = f"{status_code // 100}xx"
 
+        GATEWAY_REQUESTS.labels(
+            status_class=status_class,
+        ).inc()
+
+        REQUEST_LATENCY.observe(
+            perf_counter() - start_time,
+        )
     # Authenticate API-key clients before rate limiting.
     api_key = request.headers.get("X-API-Key")
 
@@ -71,6 +94,10 @@ async def rate_limit_middleware(
             )
 
         if client is None:
+            AUTH_FAILURES.inc()
+
+            record_request(401)
+
             return JSONResponse(
                 status_code=401,
                 content={
@@ -103,10 +130,16 @@ async def rate_limit_middleware(
         )
 
     except Exception:
+        DEPENDENCY_ERRORS.labels(
+            dependency="postgres",
+        ).inc()
+
+        record_request(503)
+
         return JSONResponse(
             status_code=503,
             content={
-                "detail": "Rate limiter unavailable",
+                "detail": "Authentication service unavailable",
             },
         )
 
@@ -127,6 +160,11 @@ async def rate_limit_middleware(
 
     # Reject request when rate limit is exceeded.
     if not decision.allowed:
+        RATE_LIMIT_REJECTIONS.labels(
+            policy=policy.name,
+        ).inc()
+
+        record_request(429)
         log_rate_limit_rejection(
             identity_type=identity_type,
             identity=identifier,
@@ -178,8 +216,9 @@ async def rate_limit_middleware(
     # Allowed request: forward to backend.
     response = await call_next(request)
 
-    # Add rate-limit headers to successful responses.
     for key, value in rate_limit_headers.items():
         response.headers[key] = value
+
+    record_request(response.status_code)
 
     return response

@@ -1,9 +1,10 @@
 fastapi
 uvicorn[standard]
 redis
-pytest
 httpx
-httpx2
+pytest
+anyio
 SQLAlchemy[asyncio]
 asyncpg
 greenlet
+prometheus-client

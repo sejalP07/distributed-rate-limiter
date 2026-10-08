@@ -12,7 +12,7 @@ from app.rate_limit_middleware import rate_limit_middleware
 from app.redis import redis_client
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-
+from prometheus_client import make_asgi_app
 from app.admin_auth import require_admin
 from app.database import get_db
 from app.schemas import (
@@ -51,6 +51,12 @@ app.middleware("http")(
     rate_limit_middleware
 )
 
+metrics_app = make_asgi_app()
+
+app.mount(
+    "/metrics",
+    metrics_app,
+)  
 
 @app.get("/health")
 async def health_check():
