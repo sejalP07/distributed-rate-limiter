@@ -1,4 +1,4 @@
-from urllib import response
+
 
 from fastapi import Request
 from starlette.responses import JSONResponse
@@ -19,6 +19,7 @@ from app.metrics import (
     GATEWAY_REQUESTS,
     RATE_LIMIT_REJECTIONS,
     REQUEST_LATENCY,
+    REDIS_LATENCY,
 )
 
 class RateLimiterManager:
@@ -86,6 +87,12 @@ async def rate_limit_middleware(
                 )
 
         except Exception:
+            DEPENDENCY_ERRORS.labels(
+                dependency="postgres",
+            ).inc()
+
+            record_request(503)
+
             return JSONResponse(
                 status_code=503,
                 content={
@@ -124,14 +131,20 @@ async def rate_limit_middleware(
     # The policy name is already part of the Redis key prefix.
     identifier = identity_value
 
+    redis_start = perf_counter()
+
     try:
         decision = await limiter.try_consume(
             identifier
         )
 
     except Exception:
+        REDIS_LATENCY.observe(
+            perf_counter() - redis_start
+        )
+
         DEPENDENCY_ERRORS.labels(
-            dependency="postgres",
+            dependency="redis",
         ).inc()
 
         record_request(503)
@@ -139,10 +152,13 @@ async def rate_limit_middleware(
         return JSONResponse(
             status_code=503,
             content={
-                "detail": "Authentication service unavailable",
+                "detail": "Rate limiter dependency unavailable",
             },
         )
 
+    REDIS_LATENCY.observe(
+        perf_counter() - redis_start
+    )
     remaining = max(
         0,
         int(decision.remaining_tokens),

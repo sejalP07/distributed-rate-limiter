@@ -44,3 +44,24 @@ REQUEST_LATENCY = Histogram(
         5.0,
     ],
 )
+
+REDIS_LATENCY = Histogram(
+    "gateway_redis_latency_seconds",
+    "Time spent performing Redis rate-limit operations.",
+    buckets=[
+        0.001, 0.002, 0.005, 0.01,
+        0.025, 0.05, 0.1, 0.25,
+        0.5, 1.0,
+    ],
+)
+
+BACKEND_LATENCY = Histogram(
+    "gateway_backend_latency_seconds",
+    "Time spent waiting for the backend service.",
+    buckets=[
+        0.001, 0.002, 0.005, 0.01,
+        0.025, 0.05, 0.1, 0.25,
+        0.5, 1.0, 2.5, 5.0,
+        10.0,
+    ],
+)

@@ -7,7 +7,7 @@ from app.database import (
     close_database,
     init_database,
 )
-from app.proxy import proxy_request
+from app.proxy import create_backend_client, proxy_request
 from app.rate_limit_middleware import rate_limit_middleware
 from app.redis import redis_client
 from fastapi import Depends
@@ -32,14 +32,17 @@ async def lifespan(app: FastAPI):
     and release them when it shuts down.
     """
 
+    backend_client = create_backend_client()
+    app.state.backend_client = backend_client
+
     await init_database()
 
     try:
         yield
     finally:
+        await backend_client.aclose()
         await close_database()
-
-
+        
 app = FastAPI(
     title="Distributed Rate Limiter & API Gateway",
     version="0.5.0",
