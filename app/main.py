@@ -1,6 +1,12 @@
 from contextlib import asynccontextmanager
 
+
+
+from prometheus_client import make_asgi_app
+
 from fastapi import FastAPI, Request
+
+from fastapi.responses import JSONResponse
 
 from app.database import (
     check_database_connection,
@@ -12,7 +18,6 @@ from app.rate_limit_middleware import rate_limit_middleware
 from app.redis import redis_client
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from prometheus_client import make_asgi_app
 from app.admin_auth import require_admin
 from app.database import get_db
 from app.schemas import (
@@ -74,35 +79,59 @@ async def redis_health_check():
     try:
         response = await redis_client.ping()
 
+        if not response:
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "status": "unhealthy",
+                    "redis": "unavailable",
+                },
+            )
+
         return {
             "status": "healthy",
             "redis": response,
         }
 
-    except Exception as exc:
-        return {
-            "status": "unhealthy",
-            "redis": str(exc),
-        }
-
+    except Exception:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "unhealthy",
+                "redis": "unavailable",
+            },
+        )
 
 @app.get("/health/db")
 async def database_health_check():
     try:
         healthy = await check_database_connection()
 
+        if not healthy:
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "status": "unhealthy",
+                    "database": "postgresql",
+                    "connected": False,
+                },
+            )
+
         return {
             "status": "healthy",
             "database": "postgresql",
-            "connected": healthy,
+            "connected": True,
         }
 
-    except Exception as exc:
-        return {
-            "status": "unhealthy",
-            "database": "postgresql",
-            "error": str(exc),
-        }
+    except Exception:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "unhealthy",
+                "database": "postgresql",
+                "connected": False,
+            },
+        )
 
 
 @app.get("/redis/test")
