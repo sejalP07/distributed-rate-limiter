@@ -100,3 +100,48 @@ Results:
 | Average latency | 294.18 ms |
 | P50 latency | 83.45 ms |
 | P95 latency | 1942.32 ms
+
+
+## Step 23: Controlled Concurrency Sweep
+
+### Methodology
+
+- Environment: Local Windows and Docker Compose.
+- Endpoint: `GET /health`.
+- Measured requests per run: 300.
+- Concurrency levels: 1, 5, 10, 20, and 40.
+- Repeated measured runs per level: 3.
+- Warm-up requests before each run: 20.
+- Total measured requests: 4,500.
+- All measured requests returned HTTP 200.
+- No HTTP 429 responses or other errors occurred.
+
+### Results
+
+| Concurrency | Throughput (req/s) | Average (ms) | P50 (ms) | P95 (ms) | P99 (ms) |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 136.31 | 7.32 | 6.47 | 11.52 | 16.32 |
+| 5 | 94.74 | 52.50 | 38.23 | 163.23 | 232.44 |
+| 10 | 97.81 | 100.04 | 55.88 | 363.76 | 639.48 |
+| 20 | 49.35 | 400.33 | 267.76 | 1525.51 | 1900.55 |
+| 40 | 65.17 | 587.70 | 402.36 | 1714.61 | 2288.31 |
+
+*Values are the median metrics reported across three measured runs at each concurrency level.*
+
+### Interpretation
+
+Concurrency 1 produced the highest measured median throughput at 136.31 requests per second. Throughput was lower at concurrency levels 5, 10, and 20, and partially recovered at concurrency 40.
+
+Average and tail latency increased substantially as concurrency increased. Run-to-run variability was also observed, particularly at higher concurrency levels.
+
+The results do not show a consistent throughput benefit from increasing concurrency. They do not establish a specific application or dependency bottleneck.
+
+### Decision and follow-up
+
+- Keep the existing single-worker configuration for now.
+- Do not treat higher concurrency as an optimization by itself.
+- Use Prometheus metrics to investigate gateway, Redis, and backend latency.
+- Repeat key benchmark configurations if needed to assess environmental variability.
+- Select optimizations only after gathering evidence about the underlying bottleneck.
+
+These results are local measurements and are not production capacity guarantees.
