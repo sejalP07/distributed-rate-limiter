@@ -196,3 +196,63 @@ during a sustained workload, with the normal rate-limit settings
 restored after performance testing.
 
 These measurements are local results, not production guarantees.
+## Step 25: Five-Minute Sustained-Load Baseline
+
+### Methodology
+
+- Endpoint: `GET /api/demo`.
+- Environment: Local Windows and Docker Compose.
+- Target duration: 300 seconds.
+- Actual elapsed time: 300.04 seconds.
+- Concurrency: 10.
+- Warm-up requests: 20.
+- Temporary high rate-limit thresholds were enabled for this capacity test.
+
+### Results
+
+| Metric | Result |
+|---|---:|
+| Completed requests | 33,232 |
+| Throughput | 110.76 req/s |
+| Successful 2xx responses | 33,232 |
+| HTTP 429 responses | 0 |
+| Other errors | 0 |
+| Average latency | 90.27 ms |
+| P50 latency | 59.07 ms |
+| P95 latency | 243.27 ms |
+| P99 latency | 461.64 ms |
+
+### Prometheus observations
+
+Queries over a five-minute window returned the following estimates:
+
+| Metric | P95 | Average |
+|---|---:|---:|
+| Gateway | 92.51 ms | 24.02 ms |
+| Redis | 9.71 ms | 2.60 ms |
+| Backend | 49.07 ms | 13.74 ms |
+
+Prometheus reported a request rate of approximately 19.00 req/s,
+which does not match the load generator's measured 110.76 req/s.
+
+The internal histogram timings are not necessarily equivalent to
+the complete client-observed request latency. The request-rate
+discrepancy must also be investigated before relying on these
+metrics to quantify full workload throughput.
+
+### Configuration recovery and test status
+
+- Normal rate-limit capacities were restored to 10, 10, 20, and 50
+  for the global, IP, user, and API-key capacity settings respectively.
+- The temporary `docker-compose.perf.yml` override was removed.
+- The application test suite passed 71 tests with one existing
+  Starlette deprecation warning.
+- The working tree was clean following the test and restoration steps.
+
+### Follow-up
+
+Inspect metric instrumentation and verify request-counter increments,
+Prometheus scrape coverage, and query-window behavior before
+selecting further performance optimizations.
+
+These are local measurements, not production capacity guarantees.
