@@ -145,3 +145,54 @@ The results do not show a consistent throughput benefit from increasing concurre
 - Select optimizations only after gathering evidence about the underlying bottleneck.
 
 These results are local measurements and are not production capacity guarantees.
+
+## Step 24: API-Path Performance Baseline
+
+### Methodology
+
+- Endpoint: GET /api/demo.
+- Environment: Local Windows and Docker Compose.
+- Measured requests per run: 300.
+- Concurrency: 10.
+- Measured runs: 3.
+- Warm-up requests per run: 20.
+- Temporary high rate-limit thresholds were used for throughput testing.
+- All 900 measured requests returned HTTP 2xx.
+- No HTTP 429 responses or other errors occurred.
+
+### Benchmark results
+
+| Run | Throughput (req/s) | Average (ms) | P50 (ms) | P95 (ms) | P99 (ms) |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 121.88 | 81.12 | 54.00 | 253.33 | 480.01 |
+| 2 | 98.13 | 100.83 | 86.49 | 186.26 | 283.48 |
+| 3 | 107.19 | 92.48 | 85.77 | 184.07 | 240.42 |
+| Median | 107.19 | 92.48 | 85.77 | 186.26 | 283.48 |
+
+### Prometheus observations
+
+A query shortly after the benchmark returned the following
+one-minute-window P95 latency estimates:
+
+- Gateway: 169.1 ms.
+- Redis: 20.1 ms.
+- Backend: 84.9 ms.
+
+These are independent histogram estimates, not an exact per-request
+latency breakdown. Later queries returned NaN or zero after the
+workload became inactive.
+
+### Interpretation
+
+The short local benchmark met the initial targets of P95 below
+250 ms and P99 below 500 ms at concurrency 10.
+
+Run-to-run variation remains visible. The measurements do not yet
+establish sustained five-minute capacity or identify a specific
+bottleneck.
+
+Further work should compare gateway, Redis, and backend behavior
+during a sustained workload, with the normal rate-limit settings
+restored after performance testing.
+
+These measurements are local results, not production guarantees.
