@@ -209,7 +209,7 @@ def test_api_request_rejection_is_logged(
     assert logged[0]["endpoint"] == "/api/demo"
     assert logged[0]["method"] == "GET"
     assert logged[0]["remaining"] == 0
-    
+
 def test_redis_failure_returns_503(monkeypatch):
     class FailingRateLimiter:
         async def try_consume(self, identifier: str):
