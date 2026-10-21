@@ -209,3 +209,26 @@ def test_api_request_rejection_is_logged(
     assert logged[0]["endpoint"] == "/api/demo"
     assert logged[0]["method"] == "GET"
     assert logged[0]["remaining"] == 0
+    
+def test_redis_failure_returns_503(monkeypatch):
+    class FailingRateLimiter:
+        async def try_consume(self, identifier: str):
+            raise RuntimeError("simulated Redis failure")
+
+    class FailingRateLimiterManager:
+        def get_limiter(self, policy):
+            return FailingRateLimiter()
+
+    monkeypatch.setattr(
+        rate_limit_module,
+        "rate_limiter_manager",
+        FailingRateLimiterManager(),
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/api/demo")
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": "Rate limiter dependency unavailable",
+    }

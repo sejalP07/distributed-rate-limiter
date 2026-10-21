@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 from starlette.responses import JSONResponse
+import httpx
 
 import app.main as main_module
 import app.rate_limit_middleware as rate_limit_module
@@ -161,3 +162,34 @@ def test_health_does_not_use_proxy(
     }
 
     assert called is False
+
+
+
+def test_backend_connection_error_returns_502(monkeypatch):
+    monkeypatch.setattr(
+        rate_limit_module,
+        "rate_limiter_manager",
+        FakeRateLimiterManager(),
+    )
+
+    async def failing_request(**kwargs):
+        request = httpx.Request(
+            kwargs["method"],
+            str(kwargs["url"]),
+        )
+        raise httpx.ConnectError(
+            "simulated backend connection failure",
+            request=request,
+        )
+
+    with TestClient(app) as client:
+        monkeypatch.setattr(
+            client.app.state.backend_client,
+            "request",
+            failing_request,
+        )
+
+        response = client.get("/api/demo")
+
+    assert response.status_code == 502
+    assert "Backend unavailable" in response.json()["detail"]
