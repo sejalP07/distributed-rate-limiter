@@ -8,27 +8,6 @@ The system is designed around **shared Redis rate-limit state** so multiple gate
 
 ---
 
-## Project Status
-
-| Step    | Component                       | Status         |
-| ------- | ------------------------------- | -------------- |
-| Step 1  | FastAPI Gateway Foundation      | ✅ Complete     |
-| Step 2  | Redis Integration               | ✅ Complete     |
-| Step 3A | In-Memory Token Bucket          | ✅ Complete     |
-| Step 3B | Redis-Backed Token Bucket       | ✅ Complete     |
-| Step 4  | FastAPI Rate-Limit Middleware   | 🚧 In Progress |
-| Step 5  | Backend Proxy / Gateway Routing | ⏳ Planned      |
-| Step 6  | PostgreSQL                      | ⏳ Planned      |
-| Step 7  | API Key Authentication          | ⏳ Planned      |
-| Step 8  | Configurable Rate Policies      | ⏳ Planned      |
-| Step 9  | Logging                         | ⏳ Planned      |
-| Step 10 | Prometheus + Grafana            | ⏳ Planned      |
-| Step 11 | Automated Integration Tests     | ⏳ Planned      |
-| Step 12 | Load Testing & Benchmarking     | ⏳ Planned      |
-| Step 13 | Failure Handling                | ⏳ Planned      |
-| Step 14 | Multi-Gateway Deployment        | ⏳ Planned      |
-
----
 
 # 1. Problem Statement
 
